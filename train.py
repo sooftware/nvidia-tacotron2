@@ -2,6 +2,7 @@ import os
 import time
 import argparse
 import math
+import wandb
 from numpy import finfo
 
 import torch
@@ -139,6 +140,7 @@ def validate(model, criterion, valset, iteration, batch_size, n_gpus,
                 reduced_val_loss = loss.item()
             val_loss += reduced_val_loss
         val_loss = val_loss / (i + 1)
+        wandb.log({"val_loss": val_loss})
 
     model.train()
     if rank == 0:
@@ -239,6 +241,11 @@ def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
                 duration = time.perf_counter() - start
                 print("Train loss {} {:.6f} Grad Norm {:.6f} {:.2f}s/it".format(
                     iteration, reduced_loss, grad_norm, duration))
+                wandb.log({
+                    "train_loss": reduced_loss,
+                    "grad_norm": grad_norm,
+                    "lr": learning_rate,
+                })
                 logger.log_training(
                     reduced_loss, grad_norm, learning_rate, duration, iteration)
 
@@ -274,6 +281,7 @@ if __name__ == '__main__':
     parser.add_argument('--hparams', type=str,
                         required=False, help='comma separated name=value pairs')
 
+    wandb.init(project='Tacotron2')
     args = parser.parse_args()
     hparams = create_hparams(args.hparams)
 
