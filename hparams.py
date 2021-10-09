@@ -1,5 +1,5 @@
 import tensorflow as tf
-from text import symbols
+from text import VOCAB_DICT
 
 
 def create_hparams(hparams_string=None, verbose=False):
@@ -43,7 +43,7 @@ def create_hparams(hparams_string=None, verbose=False):
         ################################
         # Model Parameters             #
         ################################
-        n_symbols=len(symbols),
+        n_symbols=len(VOCAB_DICT.keys()),
         symbols_embedding_dim=512,
 
         # Encoder parameters
