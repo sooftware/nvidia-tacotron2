@@ -227,24 +227,34 @@ def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
                 if not os.path.exists(os.path.join(image_directory, f"step_{total_step}")):
                     os.mkdir(os.path.join(image_directory, f"step_{total_step}"))
 
-                mel_outputs, mel_outputs_postnet, _, alignments = model.inference(x[0].unsqueeze(0))
+                text_padded = x[0]
+                mel_padded = x[2]
+
+                mel_outputs, mel_outputs_postnet, _, alignments = model.inference(text_padded[0].unsqueeze(0))
 
                 mel_outputs = mel_outputs.float().data.cpu().numpy()[0]
+                mel_padded = mel_padded.float().data.cpu().numpy()[0]
                 mel_outputs_postnet = mel_outputs_postnet.float().data.cpu().numpy()[0]
-                alignments = alignments.detach().numpy().T[0]
+                alignments = alignments.detach().cpu().numpy().T[0]
 
                 plt.imshow(mel_outputs, aspect='auto', origin='lower', interpolation='none')
                 plt.savefig(os.path.join(image_directory, f"step_{total_step}", 'mel_outputs.png'), figsize=(16, 4))
 
+                plt.imshow(mel_padded, aspect='auto', origin='lower', interpolation='none')
+                plt.savefig(os.path.join(image_directory, f"step_{total_step}", 'mel_gt.png'), figsize=(16, 4))
+
                 plt.imshow(mel_outputs_postnet, aspect='auto', origin='lower', interpolation='none')
                 plt.savefig(os.path.join(image_directory, f"step_{total_step}", 'mel_outputs_postnet.png'), figsize=(16, 4))
 
-                plt.imshow(alignments.detach().numpy().T[0], aspect='auto', origin='lower', interpolation='none')
+                plt.imshow(alignments, aspect='auto', origin='lower', interpolation='none')
                 plt.savefig(os.path.join(image_directory, f"step_{total_step}", 'alignments.png'), figsize=(16, 4))
 
                 wandb.log({
                     "Mel": [
                         wandb.Image(os.path.join(image_directory, f"step_{total_step}", 'mel_outputs.png'))
+                    ],
+                    "Mel-GroundTruth": [
+                        wandb.Image(os.path.join(image_directory, f"step_{total_step}", 'mel_gt.png'))
                     ],
                     "Mel-PostNet": [
                         wandb.Image(os.path.join(image_directory, f"step_{total_step}", 'mel_outputs_postnet.png'))
