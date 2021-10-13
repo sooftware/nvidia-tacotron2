@@ -3,6 +3,7 @@ import time
 import argparse
 import math
 import wandb
+import matplotlib.pyplot as plt
 from numpy import finfo
 
 import torch
@@ -16,6 +17,8 @@ from data_utils import TextMelLoader, TextMelCollate
 from loss_function import Tacotron2Loss
 from logger import Tacotron2Logger
 from hparams import create_hparams
+
+wandb.init(project='Tacotron2')
 
 
 def reduce_tensor(tensor, n_gpus):
@@ -149,7 +152,7 @@ def validate(model, criterion, valset, iteration, batch_size, n_gpus,
 
 
 def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
-          rank, group_name, hparams):
+          rank, group_name, hparams, image_directory, save_image_every: int = 100):
     """Training and validation logging results to tensorboard and stdout
 
     Params
@@ -161,6 +164,8 @@ def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
     rank (int): rank of current gpu
     hparams (object): comma separated list of "name=value" pairs.
     """
+    total_step = 0
+
     if hparams.distributed_run:
         init_distributed(hparams, n_gpus, rank, group_name)
 
@@ -217,6 +222,40 @@ def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
             y_pred = model(x)
 
             loss = criterion(y_pred, y)
+
+            if i % save_image_every == 0:
+                if not os.path.exists(os.path.join(image_directory, f"step_{total_step}")):
+                    os.mkdir(os.path.join(image_directory, f"step_{total_step}"))
+
+                mel_outputs, mel_outputs_postnet, _, alignments = model.inference(x[0].unsqueeze(0))
+
+                mel_outputs = mel_outputs.float().data.cpu().numpy()[0]
+                mel_outputs_postnet = mel_outputs_postnet.float().data.cpu().numpy()[0]
+                alignments = alignments.detach().numpy().T[0]
+
+                plt.imshow(mel_outputs, aspect='auto', origin='lower', interpolation='none')
+                plt.savefig(os.path.join(image_directory, f"step_{total_step}", 'mel_outputs.png'), figsize=(16, 4))
+
+                plt.imshow(mel_outputs_postnet, aspect='auto', origin='lower', interpolation='none')
+                plt.savefig(os.path.join(image_directory, f"step_{total_step}", 'mel_outputs_postnet.png'), figsize=(16, 4))
+
+                plt.imshow(alignments.detach().numpy().T[0], aspect='auto', origin='lower', interpolation='none')
+                plt.savefig(os.path.join(image_directory, f"step_{total_step}", 'alignments.png'), figsize=(16, 4))
+
+                wandb.log({
+                    "Mel": [
+                        wandb.Image(os.path.join(image_directory, f"step_{total_step}", 'mel_outputs.png'))
+                    ],
+                    "Mel-PostNet": [
+                        wandb.Image(os.path.join(image_directory, f"step_{total_step}", 'mel_outputs_postnet.png'))
+                    ],
+                    "Alignments": [
+                        wandb.Image(os.path.join(image_directory, f"step_{total_step}", 'alignments.png'))
+                    ],
+                })
+
+                total_step += save_image_every
+
             if hparams.distributed_run:
                 reduced_loss = reduce_tensor(loss.data, n_gpus).item()
             else:
@@ -244,8 +283,7 @@ def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
                     "grad_norm": grad_norm,
                     "lr": learning_rate,
                 })
-                logger.log_training(
-                    reduced_loss, grad_norm, learning_rate, duration, iteration)
+                logger.log_training(reduced_loss, grad_norm, learning_rate, duration, iteration)
 
             if not is_overflow and (iteration % hparams.iters_per_checkpoint == 0):
                 validate(model, criterion, valset, iteration,
@@ -268,10 +306,12 @@ if __name__ == '__main__':
                         help='directory to save tensorboard logs')
     parser.add_argument('-c', '--checkpoint_path', type=str, default=None,
                         required=False, help='checkpoint path')
+    parser.add_argument('--image_directory', type=str, default='/data/kaki/tacotron2_images')
     parser.add_argument('--warm_start', action='store_true',
                         help='load model weights only, ignore specified layers')
     parser.add_argument('--n_gpus', type=int, default=1,
                         required=False, help='number of gpus')
+    parser.add_argument('--save_image_every', type=int, default=100)
     parser.add_argument('--rank', type=int, default=0,
                         required=False, help='rank of current gpu')
     parser.add_argument('--group_name', type=str, default='group_name',
@@ -279,7 +319,6 @@ if __name__ == '__main__':
     parser.add_argument('--hparams', type=str,
                         required=False, help='comma separated name=value pairs')
 
-    wandb.init(project='Tacotron2')
     args = parser.parse_args()
     hparams = create_hparams(args.hparams)
 
@@ -293,4 +332,5 @@ if __name__ == '__main__':
     print("cuDNN Benchmark:", hparams.cudnn_benchmark)
 
     train(args.output_directory, args.log_directory, args.checkpoint_path,
-          args.warm_start, args.n_gpus, args.rank, args.group_name, hparams)
+          args.warm_start, args.n_gpus, args.rank, args.group_name, hparams, args.image_directory,
+          save_image_every=args.save_image_every)
