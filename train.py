@@ -224,6 +224,8 @@ def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
             loss = criterion(y_pred, y)
 
             if i % save_image_every == 0:
+                model.eval()
+
                 if not os.path.exists(os.path.join(image_directory, f"step_{total_step}")):
                     os.mkdir(os.path.join(image_directory, f"step_{total_step}"))
 
@@ -265,6 +267,7 @@ def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
                 })
 
                 total_step += save_image_every
+                model.train()
 
             if hparams.distributed_run:
                 reduced_loss = reduce_tensor(loss.data, n_gpus).item()
