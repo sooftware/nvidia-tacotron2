@@ -19,7 +19,7 @@ from logger import Tacotron2Logger
 from hparams import create_hparams
 from text import text_to_sequence
 
-wandb.init(project='Tacotron2')
+wandb.init(project='Tacotron2-G2P')
 
 
 def reduce_tensor(tensor, n_gpus):
@@ -42,6 +42,11 @@ def init_distributed(hparams, n_gpus, rank, group_name):
         world_size=n_gpus, rank=rank, group_name=group_name)
 
     print("Done initializing distributed")
+
+
+def get_lr(optimizer):
+    for param_group in optimizer.param_groups:
+        return param_group['lr']
 
 
 def prepare_dataloaders(hparams):
@@ -190,6 +195,11 @@ def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
         output_directory, log_directory, rank)
 
     train_loader, valset, collate_fn = prepare_dataloaders(hparams)
+    scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer=optimizer,
+                                                    max_lr=learning_rate,
+                                                    epochs=hparams.epochs,
+                                                    steps_per_epoch=len(train_loader),
+                                                    anneal_strategy='linear')
 
     # Load checkpoint if one exists
     iteration = 0
@@ -230,7 +240,7 @@ def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
                     os.mkdir(os.path.join(image_directory, f"epoch_{epoch}"))
 
                 sequence = text_to_sequence(test_text)
-                sequence = torch.LongTensor(sequence).unsqueeze(0)
+                sequence = torch.LongTensor(sequence).unsqueeze(0).cuda()
 
                 mel_outputs, mel_outputs_postnet, _, alignments = model.inference(sequence)
 
@@ -277,6 +287,7 @@ def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
                 grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), hparams.grad_clip_thresh)
 
             optimizer.step()
+            scheduler.step()
 
             if not is_overflow and rank == 0:
                 duration = time.perf_counter() - start
@@ -285,7 +296,7 @@ def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
                 wandb.log({
                     "train_loss": reduced_loss,
                     "grad_norm": grad_norm,
-                    "lr": learning_rate,
+                    "lr": get_lr(optimizer),
                 })
                 logger.log_training(reduced_loss, grad_norm, learning_rate, duration, iteration)
 
