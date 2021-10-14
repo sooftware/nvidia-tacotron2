@@ -17,6 +17,7 @@ from data_utils import TextMelLoader, TextMelCollate
 from loss_function import Tacotron2Loss
 from logger import Tacotron2Logger
 from hparams import create_hparams
+from text import text_to_sequence
 
 wandb.init(project='Tacotron2')
 
@@ -152,7 +153,7 @@ def validate(model, criterion, valset, iteration, batch_size, n_gpus,
 
 
 def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
-          rank, group_name, hparams, image_directory, save_image_every: int = 100):
+          rank, group_name, hparams, image_directory, test_text):
     """Training and validation logging results to tensorboard and stdout
 
     Params
@@ -164,8 +165,6 @@ def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
     rank (int): rank of current gpu
     hparams (object): comma separated list of "name=value" pairs.
     """
-    total_step = 0
-
     if hparams.distributed_run:
         init_distributed(hparams, n_gpus, rank, group_name)
 
@@ -223,50 +222,42 @@ def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
 
             loss = criterion(y_pred, y)
 
-            if i % save_image_every == 0:
+            # Log generated melspectrogram & alignments
+            if i == 0:
                 model.eval()
 
-                if not os.path.exists(os.path.join(image_directory, f"step_{total_step}")):
-                    os.mkdir(os.path.join(image_directory, f"step_{total_step}"))
+                if not os.path.exists(os.path.join(image_directory, f"epoch_{epoch}")):
+                    os.mkdir(os.path.join(image_directory, f"epoch_{epoch}"))
 
-                text_padded = x[0]
-                mel_padded = x[2]
+                sequence = text_to_sequence(test_text)
+                sequence = torch.LongTensor(sequence).unsqueeze(0)
 
-                mel_outputs, mel_outputs_postnet, _, alignments = model.inference(text_padded[0].unsqueeze(0))
+                mel_outputs, mel_outputs_postnet, _, alignments = model.inference(sequence)
 
                 mel_outputs = mel_outputs.float().data.cpu().numpy()[0]
-                mel_padded = mel_padded.float().data.cpu().numpy()[0]
                 mel_outputs_postnet = mel_outputs_postnet.float().data.cpu().numpy()[0]
-                alignments = alignments.detach().cpu().numpy().T[0]
+                alignments = alignments.float().data.cpu().numpy()[0].T
 
                 plt.imshow(mel_outputs, aspect='auto', origin='lower', interpolation='none')
-                plt.savefig(os.path.join(image_directory, f"step_{total_step}", 'mel_outputs.png'), figsize=(16, 4))
-
-                plt.imshow(mel_padded, aspect='auto', origin='lower', interpolation='none')
-                plt.savefig(os.path.join(image_directory, f"step_{total_step}", 'mel_gt.png'), figsize=(16, 4))
+                plt.savefig(os.path.join(image_directory, f"epoch_{epoch}", 'mel_outputs.png'), figsize=(16, 4))
 
                 plt.imshow(mel_outputs_postnet, aspect='auto', origin='lower', interpolation='none')
-                plt.savefig(os.path.join(image_directory, f"step_{total_step}", 'mel_outputs_postnet.png'), figsize=(16, 4))
+                plt.savefig(os.path.join(image_directory, f"epoch_{epoch}", 'mel_outputs_postnet.png'), figsize=(16, 4))
 
                 plt.imshow(alignments, aspect='auto', origin='lower', interpolation='none')
-                plt.savefig(os.path.join(image_directory, f"step_{total_step}", 'alignments.png'), figsize=(16, 4))
+                plt.savefig(os.path.join(image_directory, f"epoch_{epoch}", 'alignments.png'), figsize=(16, 4))
 
                 wandb.log({
                     "Mel": [
-                        wandb.Image(os.path.join(image_directory, f"step_{total_step}", 'mel_outputs.png'))
-                    ],
-                    "Mel-GroundTruth": [
-                        wandb.Image(os.path.join(image_directory, f"step_{total_step}", 'mel_gt.png'))
+                        wandb.Image(os.path.join(image_directory, f"epoch_{epoch}", 'mel_outputs.png'))
                     ],
                     "Mel-PostNet": [
-                        wandb.Image(os.path.join(image_directory, f"step_{total_step}", 'mel_outputs_postnet.png'))
+                        wandb.Image(os.path.join(image_directory, f"epoch_{epoch}", 'mel_outputs_postnet.png'))
                     ],
                     "Alignments": [
-                        wandb.Image(os.path.join(image_directory, f"step_{total_step}", 'alignments.png'))
+                        wandb.Image(os.path.join(image_directory, f"epoch_{epoch}", 'alignments.png'))
                     ],
                 })
-
-                total_step += save_image_every
                 model.train()
 
             if hparams.distributed_run:
@@ -324,13 +315,14 @@ if __name__ == '__main__':
                         help='load model weights only, ignore specified layers')
     parser.add_argument('--n_gpus', type=int, default=1,
                         required=False, help='number of gpus')
-    parser.add_argument('--save_image_every', type=int, default=100)
     parser.add_argument('--rank', type=int, default=0,
                         required=False, help='rank of current gpu')
     parser.add_argument('--group_name', type=str, default='group_name',
                         required=False, help='Distributed group name')
     parser.add_argument('--hparams', type=str,
                         required=False, help='comma separated name=value pairs')
+    parser.add_argument('--test_text', type=str,
+                        required=False, default='아 프린터 고장나써 짜증나')
 
     args = parser.parse_args()
     hparams = create_hparams(args.hparams)
@@ -346,4 +338,4 @@ if __name__ == '__main__':
 
     train(args.output_directory, args.log_directory, args.checkpoint_path,
           args.warm_start, args.n_gpus, args.rank, args.group_name, hparams, args.image_directory,
-          save_image_every=args.save_image_every)
+          test_text=args.test_text)
