@@ -1,4 +1,4 @@
-# Tacotron2 for Korean
+# Tacotron2 for Korean (taKotron2)
 
 - Code borrow from [NVIDIA/tacotron2](https://github.com/NVIDIA/tacotron2)
 - Modify for Korean TTS System (see [text/\_\_init\_\_.py](https://github.com/sooftware/nvidia-tacotron2/blob/master/text/__init__.py))
