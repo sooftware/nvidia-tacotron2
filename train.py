@@ -19,7 +19,7 @@ from logger import Tacotron2Logger
 from hparams import create_hparams
 from text import text_to_sequence
 
-wandb.init(project='Tacotron2-G2P')
+wandb.init(project='taKotron2')
 
 
 def reduce_tensor(tensor, n_gpus):
