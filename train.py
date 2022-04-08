@@ -178,8 +178,7 @@ def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
 
     model = load_model(hparams)
     learning_rate = hparams.learning_rate
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate,
-                                 weight_decay=hparams.weight_decay)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-03, weight_decay=hparams.weight_decay)
 
     if hparams.fp16_run:
         from apex import amp
@@ -195,11 +194,6 @@ def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
         output_directory, log_directory, rank)
 
     train_loader, valset, collate_fn = prepare_dataloaders(hparams)
-    scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer=optimizer,
-                                                    max_lr=learning_rate,
-                                                    epochs=hparams.epochs,
-                                                    steps_per_epoch=len(train_loader),
-                                                    anneal_strategy='linear')
 
     # Load checkpoint if one exists
     iteration = 0
@@ -287,7 +281,6 @@ def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
                 grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), hparams.grad_clip_thresh)
 
             optimizer.step()
-            scheduler.step()
 
             if not is_overflow and rank == 0:
                 duration = time.perf_counter() - start
@@ -321,7 +314,7 @@ if __name__ == '__main__':
                         help='directory to save tensorboard logs')
     parser.add_argument('-c', '--checkpoint_path', type=str, default=None,
                         required=False, help='checkpoint path')
-    parser.add_argument('--image_directory', type=str, default='/data/kaki/tacotron2_images')
+    parser.add_argument('--image_directory', type=str, default='images')
     parser.add_argument('--warm_start', action='store_true',
                         help='load model weights only, ignore specified layers')
     parser.add_argument('--n_gpus', type=int, default=1,
@@ -333,7 +326,7 @@ if __name__ == '__main__':
     parser.add_argument('--hparams', type=str,
                         required=False, help='comma separated name=value pairs')
     parser.add_argument('--test_text', type=str,
-                        required=False, default='아 프린터 고장나써 짜증나')
+                        required=False, default='알겠습니다')
 
     args = parser.parse_args()
     hparams = create_hparams(args.hparams)
